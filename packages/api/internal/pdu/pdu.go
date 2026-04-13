@@ -49,7 +49,34 @@ func Decode(raw string) (Message, error) {
 	index++
 	addressType := bytes[index]
 	index++
-	addressSize := addressByteLength(addressType, addressLen)
+	addressIndex := index
+	addressSizes := []int{addressByteLength(addressType, addressLen)}
+	if isAlphaNumericAddressType(addressType) {
+		fallbackSize := (addressLen + 1) / 2
+		if fallbackSize != addressSizes[0] {
+			addressSizes = append(addressSizes, fallbackSize)
+		}
+	}
+
+	var firstErr error
+	for _, addressSize := range addressSizes {
+		message, err := decodeWithAddressSize(bytes, addressIndex, addressType, addressLen, addressSize, udhi)
+		if err == nil {
+			return message, nil
+		}
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
+
+	if firstErr != nil {
+		return Message{}, firstErr
+	}
+	return Message{}, fmt.Errorf("pdu missing sender metadata")
+}
+
+func decodeWithAddressSize(bytes []byte, addressIndex int, addressType byte, addressLen int, addressSize int, udhi bool) (Message, error) {
+	index := addressIndex
 	if len(bytes) < index+addressSize+9 {
 		return Message{}, fmt.Errorf("pdu missing sender metadata")
 	}
@@ -150,7 +177,8 @@ func addressByteLength(addressType byte, addressLength int) int {
 
 func decodeAddress(addressType byte, addressLength int, address []byte) string {
 	if isAlphaNumericAddressType(addressType) {
-		return decodeGSM7(address, 0, addressLength)
+		septets := min(addressLength, (len(address)*8)/7)
+		return strings.TrimRight(decodeGSM7(address, 0, septets), "@")
 	}
 	digits := decodeSemiOctet(address)
 	if len(digits) > addressLength {
@@ -191,12 +219,33 @@ func decodeTimestamp(input []byte) (*time.Time, error) {
 		return nil, fmt.Errorf("timestamp must be 7 bytes")
 	}
 
+	for _, value := range input[:6] {
+		if !isBCD(value) {
+			return nil, fmt.Errorf("timestamp contains invalid bcd")
+		}
+	}
+	if !isBCD(input[6] & 0x7f) {
+		return nil, fmt.Errorf("timestamp timezone contains invalid bcd")
+	}
+
 	year := 2000 + swappedBCD(input[0])
 	month := swappedBCD(input[1])
 	day := swappedBCD(input[2])
 	hour := swappedBCD(input[3])
 	minute := swappedBCD(input[4])
 	second := swappedBCD(input[5])
+	switch {
+	case month < 1 || month > 12:
+		return nil, fmt.Errorf("timestamp month out of range")
+	case day < 1 || day > 31:
+		return nil, fmt.Errorf("timestamp day out of range")
+	case hour > 23:
+		return nil, fmt.Errorf("timestamp hour out of range")
+	case minute > 59:
+		return nil, fmt.Errorf("timestamp minute out of range")
+	case second > 59:
+		return nil, fmt.Errorf("timestamp second out of range")
+	}
 
 	tz := input[6]
 	offsetQuarters := swappedBCD(tz & 0x7f)
@@ -212,6 +261,10 @@ func decodeTimestamp(input []byte) (*time.Time, error) {
 
 func swappedBCD(value byte) int {
 	return int(value&0x0f)*10 + int((value&0xf0)>>4)
+}
+
+func isBCD(value byte) bool {
+	return value&0x0f <= 9 && (value>>4)&0x0f <= 9
 }
 
 func parseConcatInfo(header []byte) concatInfo {
