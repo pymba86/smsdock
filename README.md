@@ -35,6 +35,17 @@ The project uses a single root `Dockerfile` for the final image build.
 - Git tags matching `v*` publish version tags to `ghcr.io/pymba86/smsdock`.
 - `docker-compose.yml` defaults to `ghcr.io/pymba86/smsdock:latest`.
 - To pin a version, start compose with `SMSDOCK_IMAGE=ghcr.io/pymba86/smsdock:v1.0.0 docker compose up -d`.
+- For production from registry, use `docker-compose.prod.yml`:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
+
+- To pin a production version, use:
+
+```bash
+SMSDOCK_IMAGE=ghcr.io/pymba86/smsdock:v1.0.0 docker compose -f docker-compose.prod.yml up -d
+```
 
 ## Persistence
 
