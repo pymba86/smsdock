@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type ModemStatus string
 
@@ -23,11 +26,42 @@ const (
 	EventLevelError EventLevel = "error"
 )
 
+type SMSStorage string
+
+const (
+	SMSStorageSM SMSStorage = "SM"
+	SMSStorageME SMSStorage = "ME"
+	SMSStorageMT SMSStorage = "MT"
+)
+
+func NormalizeSMSStorage(value SMSStorage) SMSStorage {
+	switch strings.ToUpper(strings.TrimSpace(string(value))) {
+	case "", string(SMSStorageSM):
+		return SMSStorageSM
+	case string(SMSStorageME):
+		return SMSStorageME
+	case string(SMSStorageMT):
+		return SMSStorageMT
+	default:
+		return SMSStorage(strings.ToUpper(strings.TrimSpace(string(value))))
+	}
+}
+
+func IsValidSMSStorage(value SMSStorage) bool {
+	switch NormalizeSMSStorage(value) {
+	case SMSStorageSM, SMSStorageME, SMSStorageMT:
+		return true
+	default:
+		return false
+	}
+}
+
 type Modem struct {
 	ID                    string      `json:"id"`
 	LogicalName           string      `json:"logicalName"`
 	IMEI                  string      `json:"imei"`
 	AssignedNetworkMccMnc string      `json:"assignedNetworkMccMnc"`
+	SMSReadStorage        SMSStorage  `json:"smsReadStorage"`
 	Enabled               bool        `json:"enabled"`
 	PollIntervalSec       int         `json:"pollIntervalSec"`
 	ATTimeoutMs           int         `json:"atTimeoutMs"`
@@ -54,6 +88,7 @@ type ModemSummary struct {
 	LogicalName           string      `json:"logicalName"`
 	IMEI                  string      `json:"imei"`
 	AssignedNetworkMccMnc string      `json:"assignedNetworkMccMnc"`
+	SMSReadStorage        SMSStorage  `json:"smsReadStorage"`
 	Enabled               bool        `json:"enabled"`
 	PollIntervalSec       int         `json:"pollIntervalSec"`
 	ATTimeoutMs           int         `json:"atTimeoutMs"`
@@ -82,6 +117,7 @@ func BuildModemSummary(modem Modem, runtime ModemRuntime) ModemSummary {
 		LogicalName:           modem.LogicalName,
 		IMEI:                  modem.IMEI,
 		AssignedNetworkMccMnc: modem.AssignedNetworkMccMnc,
+		SMSReadStorage:        NormalizeSMSStorage(modem.SMSReadStorage),
 		Enabled:               modem.Enabled,
 		PollIntervalSec:       modem.PollIntervalSec,
 		ATTimeoutMs:           modem.ATTimeoutMs,
@@ -103,6 +139,8 @@ func BuildModemSummary(modem Modem, runtime ModemRuntime) ModemSummary {
 type SMSMessage struct {
 	ID             string     `json:"id"`
 	ModemID        string     `json:"modemId"`
+	Storage        SMSStorage `json:"storage"`
+	StorageIndex   *int       `json:"storageIndex"`
 	Sender         string     `json:"sender"`
 	Body           string     `json:"body"`
 	Encoding       string     `json:"encoding"`

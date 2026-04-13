@@ -145,6 +145,7 @@ func (s *Server) handleCreateModem(writer http.ResponseWriter, request *http.Req
 		LogicalName:           strings.TrimSpace(payload.LogicalName),
 		IMEI:                  strings.TrimSpace(payload.IMEI),
 		AssignedNetworkMccMnc: strings.TrimSpace(payload.AssignedNetworkMccMnc),
+		SMSReadStorage:        model.NormalizeSMSStorage(model.SMSStorage(payload.SMSReadStorage)),
 		Enabled:               payload.Enabled,
 		PollIntervalSec:       payload.PollIntervalSec,
 		ATTimeoutMs:           payload.ATTimeoutMs,
@@ -207,6 +208,9 @@ func (s *Server) handleUpdateModem(writer http.ResponseWriter, request *http.Req
 	}
 	if payload.AssignedNetworkMccMnc != nil {
 		modemRecord.AssignedNetworkMccMnc = strings.TrimSpace(*payload.AssignedNetworkMccMnc)
+	}
+	if payload.SMSReadStorage != nil {
+		modemRecord.SMSReadStorage = model.NormalizeSMSStorage(model.SMSStorage(*payload.SMSReadStorage))
 	}
 	if payload.PollIntervalSec != nil {
 		modemRecord.PollIntervalSec = *payload.PollIntervalSec
@@ -334,6 +338,7 @@ type createModemRequest struct {
 	LogicalName           string `json:"logicalName"`
 	IMEI                  string `json:"imei"`
 	AssignedNetworkMccMnc string `json:"assignedNetworkMccMnc"`
+	SMSReadStorage        string `json:"smsReadStorage"`
 	PollIntervalSec       int    `json:"pollIntervalSec"`
 	ATTimeoutMs           int    `json:"atTimeoutMs"`
 	ScanTimeoutSec        int    `json:"scanTimeoutSec"`
@@ -343,6 +348,7 @@ type createModemRequest struct {
 type updateModemRequest struct {
 	LogicalName           *string `json:"logicalName"`
 	AssignedNetworkMccMnc *string `json:"assignedNetworkMccMnc"`
+	SMSReadStorage        *string `json:"smsReadStorage"`
 	PollIntervalSec       *int    `json:"pollIntervalSec"`
 	ATTimeoutMs           *int    `json:"atTimeoutMs"`
 	ScanTimeoutSec        *int    `json:"scanTimeoutSec"`
@@ -444,6 +450,8 @@ func validateModem(modemRecord model.Modem) error {
 		return fmt.Errorf("imei is required")
 	case modemRecord.AssignedNetworkMccMnc == "":
 		return fmt.Errorf("assignedNetworkMccMnc is required")
+	case !model.IsValidSMSStorage(modemRecord.SMSReadStorage):
+		return fmt.Errorf("smsReadStorage must be one of SM, ME, MT")
 	case modemRecord.PollIntervalSec < 5:
 		return fmt.Errorf("pollIntervalSec must be at least 5")
 	case modemRecord.ATTimeoutMs < 500:

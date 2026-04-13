@@ -44,6 +44,7 @@ type StatusSnapshot struct {
 
 type ReceivedSMS struct {
 	StorageIndex    int
+	Storage         model.SMSStorage
 	Sender          string
 	Body            string
 	Encoding        string
@@ -59,8 +60,8 @@ type Adapter interface {
 	Path() string
 	Info(ctx context.Context) (DeviceInfo, error)
 	Status(ctx context.Context) (StatusSnapshot, error)
-	PollSMS(ctx context.Context) ([]ReceivedSMS, error)
-	DeleteSMS(ctx context.Context, index int) error
+	PollSMS(ctx context.Context, storage model.SMSStorage) ([]ReceivedSMS, error)
+	DeleteSMS(ctx context.Context, storage model.SMSStorage, index int) error
 	ScanNetworks(ctx context.Context) ([]model.NetworkOption, error)
 	SelectNetwork(ctx context.Context, mccMnc string) error
 	Close() error

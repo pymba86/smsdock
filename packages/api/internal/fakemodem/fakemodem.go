@@ -148,23 +148,30 @@ func (a *Adapter) Status(context.Context) (modem.StatusSnapshot, error) {
 	}, nil
 }
 
-func (a *Adapter) PollSMS(_ context.Context) ([]modem.ReceivedSMS, error) {
+func (a *Adapter) PollSMS(_ context.Context, storage model.SMSStorage) ([]modem.ReceivedSMS, error) {
 	a.fake.mu.Lock()
 	defer a.fake.mu.Unlock()
 	if a.fake.PollError != nil {
 		return nil, a.fake.PollError
 	}
-	messages := make([]modem.ReceivedSMS, len(a.fake.Messages))
-	copy(messages, a.fake.Messages)
+	normalized := model.NormalizeSMSStorage(storage)
+	messages := make([]modem.ReceivedSMS, 0, len(a.fake.Messages))
+	for _, message := range a.fake.Messages {
+		if model.NormalizeSMSStorage(message.Storage) != normalized {
+			continue
+		}
+		messages = append(messages, message)
+	}
 	return messages, nil
 }
 
-func (a *Adapter) DeleteSMS(_ context.Context, index int) error {
+func (a *Adapter) DeleteSMS(_ context.Context, storage model.SMSStorage, index int) error {
 	a.fake.mu.Lock()
 	defer a.fake.mu.Unlock()
+	normalized := model.NormalizeSMSStorage(storage)
 	filtered := a.fake.Messages[:0]
 	for _, message := range a.fake.Messages {
-		if message.StorageIndex != index {
+		if message.StorageIndex != index || model.NormalizeSMSStorage(message.Storage) != normalized {
 			filtered = append(filtered, message)
 		}
 	}

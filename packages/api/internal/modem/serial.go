@@ -238,7 +238,11 @@ func (a *SerialAdapter) Status(ctx context.Context) (StatusSnapshot, error) {
 	return status, nil
 }
 
-func (a *SerialAdapter) PollSMS(ctx context.Context) ([]ReceivedSMS, error) {
+func (a *SerialAdapter) PollSMS(ctx context.Context, storage model.SMSStorage) ([]ReceivedSMS, error) {
+	storage = model.NormalizeSMSStorage(storage)
+	if err := a.setSMSStorage(ctx, storage); err != nil {
+		return nil, err
+	}
 	if _, err := a.command(ctx, "AT+CMGF=0"); err != nil {
 		return nil, err
 	}
@@ -267,6 +271,7 @@ func (a *SerialAdapter) PollSMS(ctx context.Context) ([]ReceivedSMS, error) {
 		}
 		messages = append(messages, ReceivedSMS{
 			StorageIndex:   storageIndex,
+			Storage:        storage,
 			Sender:         decoded.Sender,
 			Body:           decoded.Body,
 			Encoding:       decoded.Encoding,
@@ -281,8 +286,17 @@ func (a *SerialAdapter) PollSMS(ctx context.Context) ([]ReceivedSMS, error) {
 	return messages, nil
 }
 
-func (a *SerialAdapter) DeleteSMS(ctx context.Context, index int) error {
+func (a *SerialAdapter) DeleteSMS(ctx context.Context, storage model.SMSStorage, index int) error {
+	if err := a.setSMSStorage(ctx, storage); err != nil {
+		return err
+	}
 	_, err := a.command(ctx, fmt.Sprintf("AT+CMGD=%d", index))
+	return err
+}
+
+func (a *SerialAdapter) setSMSStorage(ctx context.Context, storage model.SMSStorage) error {
+	storage = model.NormalizeSMSStorage(storage)
+	_, err := a.command(ctx, fmt.Sprintf(`AT+CPMS="%s"`, storage))
 	return err
 }
 

@@ -26,3 +26,8 @@ services:
 
 volumes:
   smsdock-data:
+
+
+root@pve01:/dev/serial/by-id# ls
+usb-HUAWEI_Technology_HUAWEI_Mobile-if00-port0  usb-HUAWEI_Technology_HUAWEI_Mobile-if01-port0
+root@pve01:/dev/serial/by-id#

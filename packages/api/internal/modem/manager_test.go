@@ -41,6 +41,7 @@ func TestManagerPollsAndStoresSMS(t *testing.T) {
 		Messages: []modem.ReceivedSMS{
 			{
 				StorageIndex: 1,
+				Storage:      model.SMSStorageSM,
 				Sender:       "+79990000001",
 				Body:         "hello from fake",
 				Encoding:     "gsm7",

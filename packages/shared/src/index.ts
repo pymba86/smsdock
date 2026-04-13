@@ -10,11 +10,14 @@ export type ModemStatus =
 
 export type EventLevel = "info" | "warn" | "error";
 
+export type SmsStorage = "SM" | "ME" | "MT";
+
 export interface ModemSummary {
   id: string;
   logicalName: string;
   imei: string;
   assignedNetworkMccMnc: string;
+  smsReadStorage: SmsStorage;
   enabled: boolean;
   pollIntervalSec: number;
   atTimeoutMs: number;
@@ -35,6 +38,8 @@ export interface ModemSummary {
 export interface SmsMessage {
   id: string;
   modemId: string;
+  storage: SmsStorage;
+  storageIndex: number | null;
   sender: string;
   body: string;
   encoding: string;
@@ -80,6 +85,7 @@ export interface CreateModemRequest {
   logicalName: string;
   imei: string;
   assignedNetworkMccMnc: string;
+  smsReadStorage: SmsStorage;
   pollIntervalSec: number;
   atTimeoutMs: number;
   scanTimeoutSec: number;
@@ -89,6 +95,7 @@ export interface CreateModemRequest {
 export interface UpdateModemRequest {
   logicalName?: string;
   assignedNetworkMccMnc?: string;
+  smsReadStorage?: SmsStorage;
   pollIntervalSec?: number;
   atTimeoutMs?: number;
   scanTimeoutSec?: number;

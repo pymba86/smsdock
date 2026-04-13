@@ -24,6 +24,7 @@ import type {
   ModemSummary,
   NetworkOption,
   Pagination,
+  SmsStorage,
   SmsMessage,
 } from "@smsdock/shared";
 import { api } from "./api";
@@ -32,16 +33,20 @@ type AddFormState = {
   logicalName: string;
   imei: string;
   assignedNetworkMccMnc: string;
+  smsReadStorage: SmsStorage;
   pollIntervalSec: number;
   atTimeoutMs: number;
   scanTimeoutSec: number;
   enabled: boolean;
 };
 
+const smsStorageOptions: SmsStorage[] = ["SM", "ME", "MT"];
+
 const initialAddForm: AddFormState = {
   logicalName: "",
   imei: "",
   assignedNetworkMccMnc: "",
+  smsReadStorage: "SM",
   pollIntervalSec: 10,
   atTimeoutMs: 3000,
   scanTimeoutSec: 90,
@@ -321,6 +326,7 @@ export function App() {
           logicalName: `modem-${String(response.modems.length).padStart(2, "0")}`,
           imei: first.imei,
           assignedNetworkMccMnc: first.currentNetworkCode,
+          smsReadStorage: "SM",
           pollIntervalSec: 10,
           atTimeoutMs: 3000,
           scanTimeoutSec: 90,
@@ -417,6 +423,7 @@ export function App() {
       const response = await api.updateModem(selectedModem.id, {
         logicalName: selectedModem.logicalName,
         assignedNetworkMccMnc: selectedModem.assignedNetworkMccMnc,
+        smsReadStorage: selectedModem.smsReadStorage,
         pollIntervalSec: selectedModem.pollIntervalSec,
         atTimeoutMs: selectedModem.atTimeoutMs,
         scanTimeoutSec: selectedModem.scanTimeoutSec,
@@ -641,6 +648,21 @@ export function App() {
                     />
                   </label>
                   <label>
+                    Хранилище SMS
+                    <select
+                      value={selectedModem.smsReadStorage}
+                      onChange={(event) =>
+                        patchSelectedModem({ smsReadStorage: event.target.value as SmsStorage })
+                      }
+                    >
+                      {smsStorageOptions.map((storage) => (
+                        <option key={storage} value={storage}>
+                          {storage}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
                     AT timeout, мс
                     <input
                       type="number"
@@ -818,6 +840,24 @@ export function App() {
                   />
                 </label>
                 <label>
+                  Хранилище SMS
+                  <select
+                    value={addForm.smsReadStorage}
+                    onChange={(event) =>
+                      setAddForm((current) => ({
+                        ...current,
+                        smsReadStorage: event.target.value as SmsStorage,
+                      }))
+                    }
+                  >
+                    {smsStorageOptions.map((storage) => (
+                      <option key={storage} value={storage}>
+                        {storage}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
                   Poll, сек
                   <input
                     type="number"
@@ -935,6 +975,10 @@ function MessagePanel({
               <p>{message.body}</p>
               <footer>
                 <span>{message.encoding}</span>
+                <span>
+                  {message.storage}
+                  {message.storageIndex ? ` #${message.storageIndex}` : ""}
+                </span>
                 <span>
                   {message.multipartTotal
                     ? `part ${message.multipartPart}/${message.multipartTotal}`

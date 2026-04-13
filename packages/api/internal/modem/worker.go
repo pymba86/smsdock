@@ -193,15 +193,18 @@ func (w *Worker) pollOnce(modemRecord model.Modem) error {
 		return err
 	}
 
-	messages, err := w.adapter.PollSMS(ctx)
+	messages, err := w.adapter.PollSMS(ctx, modemRecord.SMSReadStorage)
 	if err != nil {
 		w.fail(ctx, "poll_failed", err)
 		return err
 	}
 
 	for _, message := range messages {
+		storageIndex := message.StorageIndex
 		record := model.SMSMessage{
 			ModemID:        modemRecord.ID,
+			Storage:        model.NormalizeSMSStorage(message.Storage),
+			StorageIndex:   &storageIndex,
 			Sender:         message.Sender,
 			Body:           message.Body,
 			Encoding:       message.Encoding,
@@ -217,7 +220,7 @@ func (w *Worker) pollOnce(modemRecord model.Modem) error {
 			w.fail(ctx, "save_sms_failed", err)
 			return err
 		}
-		if err := w.adapter.DeleteSMS(ctx, message.StorageIndex); err != nil {
+		if err := w.adapter.DeleteSMS(ctx, message.Storage, message.StorageIndex); err != nil {
 			w.fail(ctx, "delete_sms_failed", err)
 			return err
 		}

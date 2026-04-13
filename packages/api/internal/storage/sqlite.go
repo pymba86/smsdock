@@ -48,6 +48,7 @@ func (s *SQLiteStore) migrate(ctx context.Context) error {
 			logical_name TEXT NOT NULL,
 			imei TEXT NOT NULL UNIQUE,
 			assigned_network_mcc_mnc TEXT NOT NULL,
+			sms_read_storage TEXT NOT NULL DEFAULT 'SM',
 			enabled INTEGER NOT NULL,
 			poll_interval_sec INTEGER NOT NULL,
 			at_timeout_ms INTEGER NOT NULL,
@@ -61,6 +62,8 @@ func (s *SQLiteStore) migrate(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS sms (
 			id TEXT PRIMARY KEY,
 			modem_id TEXT NOT NULL,
+			storage TEXT NOT NULL DEFAULT 'SM',
+			storage_index INTEGER,
 			sender TEXT NOT NULL,
 			body TEXT NOT NULL,
 			encoding TEXT NOT NULL,
@@ -93,6 +96,16 @@ func (s *SQLiteStore) migrate(ctx context.Context) error {
 		}
 	}
 
+	if err := s.ensureColumn(ctx, "modems", "sms_read_storage", `TEXT NOT NULL DEFAULT 'SM'`); err != nil {
+		return err
+	}
+	if err := s.ensureColumn(ctx, "sms", "storage", `TEXT NOT NULL DEFAULT 'SM'`); err != nil {
+		return err
+	}
+	if err := s.ensureColumn(ctx, "sms", "storage_index", `INTEGER`); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -102,7 +115,7 @@ func (s *SQLiteStore) Ping(ctx context.Context) error {
 
 func (s *SQLiteStore) ListModems(ctx context.Context) ([]model.Modem, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, logical_name, imei, assigned_network_mcc_mnc, enabled,
+		SELECT id, logical_name, imei, assigned_network_mcc_mnc, sms_read_storage, enabled,
 		       poll_interval_sec, at_timeout_ms, scan_timeout_sec, status,
 		       last_error, last_seen_at, created_at, updated_at
 		FROM modems
@@ -131,7 +144,7 @@ func (s *SQLiteStore) ListModems(ctx context.Context) ([]model.Modem, error) {
 
 func (s *SQLiteStore) GetModem(ctx context.Context, id string) (model.Modem, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, logical_name, imei, assigned_network_mcc_mnc, enabled,
+		SELECT id, logical_name, imei, assigned_network_mcc_mnc, sms_read_storage, enabled,
 		       poll_interval_sec, at_timeout_ms, scan_timeout_sec, status,
 		       last_error, last_seen_at, created_at, updated_at
 		FROM modems
@@ -147,7 +160,7 @@ func (s *SQLiteStore) GetModem(ctx context.Context, id string) (model.Modem, err
 
 func (s *SQLiteStore) GetModemByIMEI(ctx context.Context, imei string) (model.Modem, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, logical_name, imei, assigned_network_mcc_mnc, enabled,
+		SELECT id, logical_name, imei, assigned_network_mcc_mnc, sms_read_storage, enabled,
 		       poll_interval_sec, at_timeout_ms, scan_timeout_sec, status,
 		       last_error, last_seen_at, created_at, updated_at
 		FROM modems
@@ -168,6 +181,7 @@ func (s *SQLiteStore) CreateModem(ctx context.Context, modem model.Modem) (model
 	}
 	modem.CreatedAt = now
 	modem.UpdatedAt = now
+	modem.SMSReadStorage = model.NormalizeSMSStorage(modem.SMSReadStorage)
 	if modem.Status == "" {
 		if modem.Enabled {
 			modem.Status = model.ModemStatusOffline
@@ -178,15 +192,16 @@ func (s *SQLiteStore) CreateModem(ctx context.Context, modem model.Modem) (model
 
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO modems (
-			id, logical_name, imei, assigned_network_mcc_mnc, enabled,
+			id, logical_name, imei, assigned_network_mcc_mnc, sms_read_storage, enabled,
 			poll_interval_sec, at_timeout_ms, scan_timeout_sec, status,
 			last_error, last_seen_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		modem.ID,
 		modem.LogicalName,
 		modem.IMEI,
 		modem.AssignedNetworkMccMnc,
+		modem.SMSReadStorage,
 		boolToInt(modem.Enabled),
 		modem.PollIntervalSec,
 		modem.ATTimeoutMs,
@@ -206,10 +221,12 @@ func (s *SQLiteStore) CreateModem(ctx context.Context, modem model.Modem) (model
 
 func (s *SQLiteStore) UpdateModem(ctx context.Context, modem model.Modem) (model.Modem, error) {
 	modem.UpdatedAt = time.Now().UTC()
+	modem.SMSReadStorage = model.NormalizeSMSStorage(modem.SMSReadStorage)
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE modems
 		SET logical_name = ?,
 		    assigned_network_mcc_mnc = ?,
+		    sms_read_storage = ?,
 		    enabled = ?,
 		    poll_interval_sec = ?,
 		    at_timeout_ms = ?,
@@ -222,6 +239,7 @@ func (s *SQLiteStore) UpdateModem(ctx context.Context, modem model.Modem) (model
 	`,
 		modem.LogicalName,
 		modem.AssignedNetworkMccMnc,
+		modem.SMSReadStorage,
 		boolToInt(modem.Enabled),
 		modem.PollIntervalSec,
 		modem.ATTimeoutMs,
@@ -300,12 +318,14 @@ func (s *SQLiteStore) SaveSMS(ctx context.Context, message model.SMSMessage) err
 
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO sms (
-			id, modem_id, sender, body, encoding, raw_pdu, modem_timestamp,
-			received_at, multipart_ref, multipart_part, multipart_total, dedupe_key
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			id, modem_id, storage, storage_index, sender, body, encoding, raw_pdu,
+			modem_timestamp, received_at, multipart_ref, multipart_part, multipart_total, dedupe_key
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		message.ID,
 		message.ModemID,
+		model.NormalizeSMSStorage(message.Storage),
+		nullableInt(message.StorageIndex),
 		message.Sender,
 		message.Body,
 		message.Encoding,
@@ -329,8 +349,8 @@ func (s *SQLiteStore) SaveSMS(ctx context.Context, message model.SMSMessage) err
 
 func (s *SQLiteStore) ListSMS(ctx context.Context, modemID string, limit int) ([]model.SMSMessage, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, modem_id, sender, body, encoding, raw_pdu, modem_timestamp,
-		       received_at, multipart_ref, multipart_part, multipart_total, dedupe_key
+		SELECT id, modem_id, storage, storage_index, sender, body, encoding, raw_pdu,
+		       modem_timestamp, received_at, multipart_ref, multipart_part, multipart_total, dedupe_key
 		FROM sms
 		WHERE modem_id = ?
 		ORDER BY received_at DESC
@@ -454,8 +474,8 @@ func (s *SQLiteStore) PurgeEvents(ctx context.Context, infoBefore, warnBefore ti
 func (s *SQLiteStore) listSMSWithOffset(ctx context.Context, modemID string, page, pageSize int) ([]model.SMSMessage, error) {
 	offset := pageOffset(page, pageSize)
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, modem_id, sender, body, encoding, raw_pdu, modem_timestamp,
-		       received_at, multipart_ref, multipart_part, multipart_total, dedupe_key
+		SELECT id, modem_id, storage, storage_index, sender, body, encoding, raw_pdu,
+		       modem_timestamp, received_at, multipart_ref, multipart_part, multipart_total, dedupe_key
 		FROM sms
 		WHERE modem_id = ?
 		ORDER BY received_at DESC
@@ -530,6 +550,7 @@ func scanModem(scan func(dest ...any) error) (model.Modem, error) {
 	var modem model.Modem
 	var enabled int
 	var lastSeen sql.NullString
+	var smsReadStorage string
 	var status string
 	var createdAt string
 	var updatedAt string
@@ -539,6 +560,7 @@ func scanModem(scan func(dest ...any) error) (model.Modem, error) {
 		&modem.LogicalName,
 		&modem.IMEI,
 		&modem.AssignedNetworkMccMnc,
+		&smsReadStorage,
 		&enabled,
 		&modem.PollIntervalSec,
 		&modem.ATTimeoutMs,
@@ -557,6 +579,7 @@ func scanModem(scan func(dest ...any) error) (model.Modem, error) {
 	}
 
 	modem.Enabled = enabled == 1
+	modem.SMSReadStorage = model.NormalizeSMSStorage(model.SMSStorage(smsReadStorage))
 	modem.Status = model.ModemStatus(status)
 	if lastSeen.Valid {
 		parsed, err := time.Parse(time.RFC3339Nano, lastSeen.String)
@@ -580,6 +603,8 @@ func scanModem(scan func(dest ...any) error) (model.Modem, error) {
 func scanSMS(scan func(dest ...any) error) (model.SMSMessage, error) {
 	var message model.SMSMessage
 	var modemTimestamp sql.NullString
+	var storage string
+	var storageIndex sql.NullInt64
 	var multipartRef sql.NullInt64
 	var multipartPart sql.NullInt64
 	var multipartTotal sql.NullInt64
@@ -588,6 +613,8 @@ func scanSMS(scan func(dest ...any) error) (model.SMSMessage, error) {
 	err := scan(
 		&message.ID,
 		&message.ModemID,
+		&storage,
+		&storageIndex,
 		&message.Sender,
 		&message.Body,
 		&message.Encoding,
@@ -603,6 +630,11 @@ func scanSMS(scan func(dest ...any) error) (model.SMSMessage, error) {
 		return model.SMSMessage{}, fmt.Errorf("scan sms: %w", err)
 	}
 
+	message.Storage = model.NormalizeSMSStorage(model.SMSStorage(storage))
+	if storageIndex.Valid {
+		value := int(storageIndex.Int64)
+		message.StorageIndex = &value
+	}
 	if modemTimestamp.Valid {
 		parsed, err := time.Parse(time.RFC3339Nano, modemTimestamp.String)
 		if err != nil {
@@ -677,6 +709,49 @@ func nullableInt(value *int) any {
 		return nil
 	}
 	return *value
+}
+
+func (s *SQLiteStore) ensureColumn(ctx context.Context, table, column, definition string) error {
+	exists, err := s.columnExists(ctx, table, column)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+
+	statement := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, table, column, definition)
+	if _, err := s.db.ExecContext(ctx, statement); err != nil {
+		return fmt.Errorf("migrate sqlite add column %s.%s: %w", table, column, err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) columnExists(ctx context.Context, table, column string) (bool, error) {
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`PRAGMA table_info(%s)`, table))
+	if err != nil {
+		return false, fmt.Errorf("pragma table_info %s: %w", table, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name string
+		var dataType string
+		var notNull int
+		var defaultValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &pk); err != nil {
+			return false, fmt.Errorf("scan table_info %s: %w", table, err)
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("iterate table_info %s: %w", table, err)
+	}
+	return false, nil
 }
 
 func isSQLiteConstraint(err error) bool {
