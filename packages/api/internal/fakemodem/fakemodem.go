@@ -30,6 +30,7 @@ type FakeModem struct {
 	CurrentNetworkName string
 	Networks           []model.NetworkOption
 	Messages           []modem.ReceivedSMS
+	StorageCapacity    int
 	Available          bool
 
 	StatusError error
@@ -163,6 +164,30 @@ func (a *Adapter) PollSMS(_ context.Context, storage model.SMSStorage) ([]modem.
 		messages = append(messages, message)
 	}
 	return messages, nil
+}
+
+func (a *Adapter) SMSStorageStatus(_ context.Context, storage model.SMSStorage) (modem.SMSStorageUsage, error) {
+	a.fake.mu.Lock()
+	defer a.fake.mu.Unlock()
+
+	normalized := model.NormalizeSMSStorage(storage)
+	used := 0
+	for _, message := range a.fake.Messages {
+		if model.NormalizeSMSStorage(message.Storage) == normalized {
+			used++
+		}
+	}
+
+	total := a.fake.StorageCapacity
+	if total <= 0 {
+		total = 20
+	}
+
+	return modem.SMSStorageUsage{
+		Storage: normalized,
+		Used:    used,
+		Total:   total,
+	}, nil
 }
 
 func (a *Adapter) DeleteSMS(_ context.Context, storage model.SMSStorage, index int) error {

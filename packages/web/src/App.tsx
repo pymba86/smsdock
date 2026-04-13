@@ -34,6 +34,7 @@ type AddFormState = {
   imei: string;
   assignedNetworkMccMnc: string;
   smsReadStorage: SmsStorage;
+  smsDeleteThresholdPct: number;
   pollIntervalSec: number;
   atTimeoutMs: number;
   scanTimeoutSec: number;
@@ -47,6 +48,7 @@ const initialAddForm: AddFormState = {
   imei: "",
   assignedNetworkMccMnc: "",
   smsReadStorage: "SM",
+  smsDeleteThresholdPct: 80,
   pollIntervalSec: 10,
   atTimeoutMs: 3000,
   scanTimeoutSec: 90,
@@ -327,6 +329,7 @@ export function App() {
           imei: first.imei,
           assignedNetworkMccMnc: first.currentNetworkCode,
           smsReadStorage: "SM",
+          smsDeleteThresholdPct: 80,
           pollIntervalSec: 10,
           atTimeoutMs: 3000,
           scanTimeoutSec: 90,
@@ -424,6 +427,7 @@ export function App() {
         logicalName: selectedModem.logicalName,
         assignedNetworkMccMnc: selectedModem.assignedNetworkMccMnc,
         smsReadStorage: selectedModem.smsReadStorage,
+        smsDeleteThresholdPct: selectedModem.smsDeleteThresholdPct,
         pollIntervalSec: selectedModem.pollIntervalSec,
         atTimeoutMs: selectedModem.atTimeoutMs,
         scanTimeoutSec: selectedModem.scanTimeoutSec,
@@ -663,6 +667,20 @@ export function App() {
                     </select>
                   </label>
                   <label>
+                    Порог очистки, %
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={selectedModem.smsDeleteThresholdPct}
+                      onChange={(event) =>
+                        patchSelectedModem({
+                          smsDeleteThresholdPct: Number(event.target.value) || 1,
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
                     AT timeout, мс
                     <input
                       type="number"
@@ -856,6 +874,21 @@ export function App() {
                       </option>
                     ))}
                   </select>
+                </label>
+                <label>
+                  Порог очистки, %
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={addForm.smsDeleteThresholdPct}
+                    onChange={(event) =>
+                      setAddForm((current) => ({
+                        ...current,
+                        smsDeleteThresholdPct: Number(event.target.value) || 1,
+                      }))
+                    }
+                  />
                 </label>
                 <label>
                   Poll, сек

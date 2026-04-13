@@ -18,6 +18,7 @@ export interface ModemSummary {
   imei: string;
   assignedNetworkMccMnc: string;
   smsReadStorage: SmsStorage;
+  smsDeleteThresholdPct: number;
   enabled: boolean;
   pollIntervalSec: number;
   atTimeoutMs: number;
@@ -86,6 +87,7 @@ export interface CreateModemRequest {
   imei: string;
   assignedNetworkMccMnc: string;
   smsReadStorage: SmsStorage;
+  smsDeleteThresholdPct: number;
   pollIntervalSec: number;
   atTimeoutMs: number;
   scanTimeoutSec: number;
@@ -96,6 +98,7 @@ export interface UpdateModemRequest {
   logicalName?: string;
   assignedNetworkMccMnc?: string;
   smsReadStorage?: SmsStorage;
+  smsDeleteThresholdPct?: number;
   pollIntervalSec?: number;
   atTimeoutMs?: number;
   scanTimeoutSec?: number;

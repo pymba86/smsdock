@@ -34,6 +34,8 @@ const (
 	SMSStorageMT SMSStorage = "MT"
 )
 
+const DefaultSMSDeleteThresholdPct = 80
+
 func NormalizeSMSStorage(value SMSStorage) SMSStorage {
 	switch strings.ToUpper(strings.TrimSpace(string(value))) {
 	case "", string(SMSStorageSM):
@@ -56,12 +58,20 @@ func IsValidSMSStorage(value SMSStorage) bool {
 	}
 }
 
+func NormalizeSMSDeleteThresholdPct(value int) int {
+	if value <= 0 {
+		return DefaultSMSDeleteThresholdPct
+	}
+	return value
+}
+
 type Modem struct {
 	ID                    string      `json:"id"`
 	LogicalName           string      `json:"logicalName"`
 	IMEI                  string      `json:"imei"`
 	AssignedNetworkMccMnc string      `json:"assignedNetworkMccMnc"`
 	SMSReadStorage        SMSStorage  `json:"smsReadStorage"`
+	SMSDeleteThresholdPct int         `json:"smsDeleteThresholdPct"`
 	Enabled               bool        `json:"enabled"`
 	PollIntervalSec       int         `json:"pollIntervalSec"`
 	ATTimeoutMs           int         `json:"atTimeoutMs"`
@@ -89,6 +99,7 @@ type ModemSummary struct {
 	IMEI                  string      `json:"imei"`
 	AssignedNetworkMccMnc string      `json:"assignedNetworkMccMnc"`
 	SMSReadStorage        SMSStorage  `json:"smsReadStorage"`
+	SMSDeleteThresholdPct int         `json:"smsDeleteThresholdPct"`
 	Enabled               bool        `json:"enabled"`
 	PollIntervalSec       int         `json:"pollIntervalSec"`
 	ATTimeoutMs           int         `json:"atTimeoutMs"`
@@ -118,6 +129,7 @@ func BuildModemSummary(modem Modem, runtime ModemRuntime) ModemSummary {
 		IMEI:                  modem.IMEI,
 		AssignedNetworkMccMnc: modem.AssignedNetworkMccMnc,
 		SMSReadStorage:        NormalizeSMSStorage(modem.SMSReadStorage),
+		SMSDeleteThresholdPct: NormalizeSMSDeleteThresholdPct(modem.SMSDeleteThresholdPct),
 		Enabled:               modem.Enabled,
 		PollIntervalSec:       modem.PollIntervalSec,
 		ATTimeoutMs:           modem.ATTimeoutMs,

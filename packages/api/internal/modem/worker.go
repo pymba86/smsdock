@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math"
+	"sort"
 	"sync"
 	"time"
 
@@ -220,10 +222,11 @@ func (w *Worker) pollOnce(modemRecord model.Modem) error {
 			w.fail(ctx, "save_sms_failed", err)
 			return err
 		}
-		if err := w.adapter.DeleteSMS(ctx, message.Storage, message.StorageIndex); err != nil {
-			w.fail(ctx, "delete_sms_failed", err)
-			return err
-		}
+	}
+
+	if err := w.cleanupStoredSMS(ctx, modemRecord, messages); err != nil {
+		w.fail(ctx, "cleanup_sms_failed", err)
+		return err
 	}
 
 	successAt := time.Now().UTC()
@@ -333,4 +336,67 @@ func (w *Worker) closeAdapter() {
 func (w *Worker) dedupeKey(modemID string, message ReceivedSMS) string {
 	hash := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%s|%v|%s", modemID, message.Sender, message.RawPDU, message.Timestamp, message.DedupeKeySuffix)))
 	return hex.EncodeToString(hash[:])
+}
+
+func (w *Worker) cleanupStoredSMS(ctx context.Context, modemRecord model.Modem, messages []ReceivedSMS) error {
+	if len(messages) == 0 {
+		return nil
+	}
+
+	usage, err := w.adapter.SMSStorageStatus(ctx, modemRecord.SMSReadStorage)
+	if err != nil {
+		return err
+	}
+	thresholdSlots := thresholdSlots(usage.Total, modemRecord.SMSDeleteThresholdPct)
+	if usage.Used <= thresholdSlots {
+		return nil
+	}
+
+	deleteCount := usage.Used - thresholdSlots
+	if deleteCount > len(messages) {
+		deleteCount = len(messages)
+	}
+	if deleteCount <= 0 {
+		return nil
+	}
+
+	candidates := append([]ReceivedSMS(nil), messages...)
+	sort.SliceStable(candidates, func(i, j int) bool {
+		left := smsSortTime(candidates[i])
+		right := smsSortTime(candidates[j])
+		if !left.Equal(right) {
+			return left.Before(right)
+		}
+		return candidates[i].StorageIndex < candidates[j].StorageIndex
+	})
+
+	for _, message := range candidates[:deleteCount] {
+		if err := w.adapter.DeleteSMS(ctx, message.Storage, message.StorageIndex); err != nil {
+			return err
+		}
+	}
+
+	return w.rateLimitedEvent(
+		ctx,
+		fmt.Sprintf("sms_cleanup:%s:%d:%d:%d", usage.Storage, usage.Used, usage.Total, thresholdSlots),
+		model.EventLevelInfo,
+		"sms_cleanup",
+		fmt.Sprintf("Cleaned %d SMS from %s to keep storage usage at %d/%d", deleteCount, usage.Storage, thresholdSlots, usage.Total),
+		fmt.Sprintf(`{"storage":"%s","deleted":%d,"used":%d,"total":%d,"threshold":%d}`, usage.Storage, deleteCount, usage.Used, usage.Total, thresholdSlots),
+	)
+}
+
+func thresholdSlots(total int, percent int) int {
+	if total <= 0 {
+		return 0
+	}
+	percent = model.NormalizeSMSDeleteThresholdPct(percent)
+	return max(1, int(math.Ceil(float64(total*percent)/100)))
+}
+
+func smsSortTime(message ReceivedSMS) time.Time {
+	if message.Timestamp == nil {
+		return time.Time{}
+	}
+	return message.Timestamp.UTC()
 }

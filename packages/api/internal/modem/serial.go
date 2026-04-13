@@ -24,6 +24,7 @@ var (
 	copsScanPattern   = regexp.MustCompile(`\((\d+),"([^"]*)","([^"]*)","([^"]*)"(?:,"([^"]*)")?\)`)
 	copsStatusPattern = regexp.MustCompile(`^\+COPS:\s*(\d+)(?:,(\d+),"([^"]*)")?`)
 	cpinPattern       = regexp.MustCompile(`^\+CPIN:\s*(.+)$`)
+	cpmsPattern       = regexp.MustCompile(`^\+CPMS:\s*"([^"]+)",(\d+),(\d+)`)
 	csqPattern        = regexp.MustCompile(`^\+CSQ:\s*(\d+),`)
 )
 
@@ -284,6 +285,41 @@ func (a *SerialAdapter) PollSMS(ctx context.Context, storage model.SMSStorage) (
 	}
 
 	return messages, nil
+}
+
+func (a *SerialAdapter) SMSStorageStatus(ctx context.Context, storage model.SMSStorage) (SMSStorageUsage, error) {
+	storage = model.NormalizeSMSStorage(storage)
+	if err := a.setSMSStorage(ctx, storage); err != nil {
+		return SMSStorageUsage{}, err
+	}
+
+	lines, err := a.command(ctx, "AT+CPMS?")
+	if err != nil {
+		return SMSStorageUsage{}, err
+	}
+	for _, line := range lines {
+		matches := cpmsPattern.FindStringSubmatch(line)
+		if len(matches) != 4 {
+			continue
+		}
+
+		used, err := strconv.Atoi(matches[2])
+		if err != nil {
+			return SMSStorageUsage{}, fmt.Errorf("parse cpms used from %q: %w", line, err)
+		}
+		total, err := strconv.Atoi(matches[3])
+		if err != nil {
+			return SMSStorageUsage{}, fmt.Errorf("parse cpms total from %q: %w", line, err)
+		}
+
+		return SMSStorageUsage{
+			Storage: model.NormalizeSMSStorage(model.SMSStorage(matches[1])),
+			Used:    used,
+			Total:   total,
+		}, nil
+	}
+
+	return SMSStorageUsage{}, fmt.Errorf("cpms status not found for %s", storage)
 }
 
 func (a *SerialAdapter) DeleteSMS(ctx context.Context, storage model.SMSStorage, index int) error {

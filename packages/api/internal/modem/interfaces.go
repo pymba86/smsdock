@@ -56,11 +56,18 @@ type ReceivedSMS struct {
 	DedupeKeySuffix string
 }
 
+type SMSStorageUsage struct {
+	Storage model.SMSStorage
+	Used    int
+	Total   int
+}
+
 type Adapter interface {
 	Path() string
 	Info(ctx context.Context) (DeviceInfo, error)
 	Status(ctx context.Context) (StatusSnapshot, error)
 	PollSMS(ctx context.Context, storage model.SMSStorage) ([]ReceivedSMS, error)
+	SMSStorageStatus(ctx context.Context, storage model.SMSStorage) (SMSStorageUsage, error)
 	DeleteSMS(ctx context.Context, storage model.SMSStorage, index int) error
 	ScanNetworks(ctx context.Context) ([]model.NetworkOption, error)
 	SelectNetwork(ctx context.Context, mccMnc string) error

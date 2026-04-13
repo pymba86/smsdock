@@ -107,6 +107,125 @@ func TestManagerPollsAndStoresSMS(t *testing.T) {
 	}
 }
 
+func TestManagerCleansUpSMSOnlyAboveThreshold(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store, err := storage.Open(ctx, filepath.Join(t.TempDir(), "smsdock.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	registry := fakemodem.NewRegistry()
+	fake := &fakemodem.FakeModem{
+		Path:               "/dev/fake-modem-02",
+		IMEI:               "223456789012345",
+		Manufacturer:       "fake",
+		Model:              "M2",
+		Firmware:           "1.0.0",
+		SIMState:           "READY",
+		ICCID:              "8901000000000000002",
+		SignalStrength:     20,
+		CurrentNetworkCode: "25001",
+		CurrentNetworkName: "operator-a",
+		StorageCapacity:    3,
+		Messages: []modem.ReceivedSMS{
+			{
+				StorageIndex: 1,
+				Storage:      model.SMSStorageSM,
+				Sender:       "+79990000001",
+				Body:         "first",
+				Encoding:     "gsm7",
+				RawPDU:       "aaaa",
+				Timestamp:    ptrTime(time.Now().UTC().Add(-3 * time.Minute)),
+			},
+			{
+				StorageIndex: 2,
+				Storage:      model.SMSStorageSM,
+				Sender:       "+79990000002",
+				Body:         "second",
+				Encoding:     "gsm7",
+				RawPDU:       "bbbb",
+				Timestamp:    ptrTime(time.Now().UTC().Add(-2 * time.Minute)),
+			},
+			{
+				StorageIndex: 3,
+				Storage:      model.SMSStorageSM,
+				Sender:       "+79990000003",
+				Body:         "third",
+				Encoding:     "gsm7",
+				RawPDU:       "cccc",
+				Timestamp:    ptrTime(time.Now().UTC().Add(-1 * time.Minute)),
+			},
+		},
+		Available: true,
+	}
+	registry.Add(fake)
+
+	modemRecord, err := store.CreateModem(ctx, model.Modem{
+		LogicalName:           "fake-02",
+		IMEI:                  fake.IMEI,
+		AssignedNetworkMccMnc: "25001",
+		SMSReadStorage:        model.SMSStorageSM,
+		SMSDeleteThresholdPct: 50,
+		Enabled:               true,
+		PollIntervalSec:       1,
+		ATTimeoutMs:           1000,
+		ScanTimeoutSec:        30,
+	})
+	if err != nil {
+		t.Fatalf("CreateModem() error = %v", err)
+	}
+
+	manager := modem.NewManager(store, registry)
+	if err := manager.Load(ctx); err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	defer manager.StopAll()
+
+	waitFor(t, 3*time.Second, func() bool {
+		sms, listErr := store.ListSMS(ctx, modemRecord.ID, 10)
+		if listErr != nil || len(sms) != 3 {
+			return false
+		}
+
+		adapter, _, bindErr := registry.BindByIMEI(ctx, fake.IMEI, time.Second)
+		if bindErr != nil {
+			return false
+		}
+		defer adapter.Close()
+
+		remaining, pollErr := adapter.PollSMS(ctx, model.SMSStorageSM)
+		return pollErr == nil && len(remaining) == 2
+	})
+
+	sms, err := store.ListSMS(ctx, modemRecord.ID, 10)
+	if err != nil {
+		t.Fatalf("ListSMS() error = %v", err)
+	}
+	if len(sms) != 3 {
+		t.Fatalf("sms length = %d", len(sms))
+	}
+
+	adapter, _, err := registry.BindByIMEI(ctx, fake.IMEI, time.Second)
+	if err != nil {
+		t.Fatalf("BindByIMEI() error = %v", err)
+	}
+	defer adapter.Close()
+
+	remaining, err := adapter.PollSMS(ctx, model.SMSStorageSM)
+	if err != nil {
+		t.Fatalf("PollSMS() error = %v", err)
+	}
+	if len(remaining) != 2 {
+		t.Fatalf("remaining modem sms = %d", len(remaining))
+	}
+	if remaining[0].Body != "second" || remaining[1].Body != "third" {
+		t.Fatalf("remaining modem sms = %#v", remaining)
+	}
+}
+
 func waitFor(t *testing.T, timeout time.Duration, condition func() bool) {
 	t.Helper()
 

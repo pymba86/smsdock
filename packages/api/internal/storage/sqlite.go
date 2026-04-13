@@ -49,6 +49,7 @@ func (s *SQLiteStore) migrate(ctx context.Context) error {
 			imei TEXT NOT NULL UNIQUE,
 			assigned_network_mcc_mnc TEXT NOT NULL,
 			sms_read_storage TEXT NOT NULL DEFAULT 'SM',
+			sms_delete_threshold_pct INTEGER NOT NULL DEFAULT 80,
 			enabled INTEGER NOT NULL,
 			poll_interval_sec INTEGER NOT NULL,
 			at_timeout_ms INTEGER NOT NULL,
@@ -99,6 +100,9 @@ func (s *SQLiteStore) migrate(ctx context.Context) error {
 	if err := s.ensureColumn(ctx, "modems", "sms_read_storage", `TEXT NOT NULL DEFAULT 'SM'`); err != nil {
 		return err
 	}
+	if err := s.ensureColumn(ctx, "modems", "sms_delete_threshold_pct", `INTEGER NOT NULL DEFAULT 80`); err != nil {
+		return err
+	}
 	if err := s.ensureColumn(ctx, "sms", "storage", `TEXT NOT NULL DEFAULT 'SM'`); err != nil {
 		return err
 	}
@@ -115,7 +119,7 @@ func (s *SQLiteStore) Ping(ctx context.Context) error {
 
 func (s *SQLiteStore) ListModems(ctx context.Context) ([]model.Modem, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, logical_name, imei, assigned_network_mcc_mnc, sms_read_storage, enabled,
+		SELECT id, logical_name, imei, assigned_network_mcc_mnc, sms_read_storage, sms_delete_threshold_pct, enabled,
 		       poll_interval_sec, at_timeout_ms, scan_timeout_sec, status,
 		       last_error, last_seen_at, created_at, updated_at
 		FROM modems
@@ -144,7 +148,7 @@ func (s *SQLiteStore) ListModems(ctx context.Context) ([]model.Modem, error) {
 
 func (s *SQLiteStore) GetModem(ctx context.Context, id string) (model.Modem, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, logical_name, imei, assigned_network_mcc_mnc, sms_read_storage, enabled,
+		SELECT id, logical_name, imei, assigned_network_mcc_mnc, sms_read_storage, sms_delete_threshold_pct, enabled,
 		       poll_interval_sec, at_timeout_ms, scan_timeout_sec, status,
 		       last_error, last_seen_at, created_at, updated_at
 		FROM modems
@@ -160,7 +164,7 @@ func (s *SQLiteStore) GetModem(ctx context.Context, id string) (model.Modem, err
 
 func (s *SQLiteStore) GetModemByIMEI(ctx context.Context, imei string) (model.Modem, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, logical_name, imei, assigned_network_mcc_mnc, sms_read_storage, enabled,
+		SELECT id, logical_name, imei, assigned_network_mcc_mnc, sms_read_storage, sms_delete_threshold_pct, enabled,
 		       poll_interval_sec, at_timeout_ms, scan_timeout_sec, status,
 		       last_error, last_seen_at, created_at, updated_at
 		FROM modems
@@ -182,6 +186,7 @@ func (s *SQLiteStore) CreateModem(ctx context.Context, modem model.Modem) (model
 	modem.CreatedAt = now
 	modem.UpdatedAt = now
 	modem.SMSReadStorage = model.NormalizeSMSStorage(modem.SMSReadStorage)
+	modem.SMSDeleteThresholdPct = model.NormalizeSMSDeleteThresholdPct(modem.SMSDeleteThresholdPct)
 	if modem.Status == "" {
 		if modem.Enabled {
 			modem.Status = model.ModemStatusOffline
@@ -192,16 +197,17 @@ func (s *SQLiteStore) CreateModem(ctx context.Context, modem model.Modem) (model
 
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO modems (
-			id, logical_name, imei, assigned_network_mcc_mnc, sms_read_storage, enabled,
+			id, logical_name, imei, assigned_network_mcc_mnc, sms_read_storage, sms_delete_threshold_pct, enabled,
 			poll_interval_sec, at_timeout_ms, scan_timeout_sec, status,
 			last_error, last_seen_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		modem.ID,
 		modem.LogicalName,
 		modem.IMEI,
 		modem.AssignedNetworkMccMnc,
 		modem.SMSReadStorage,
+		modem.SMSDeleteThresholdPct,
 		boolToInt(modem.Enabled),
 		modem.PollIntervalSec,
 		modem.ATTimeoutMs,
@@ -222,11 +228,13 @@ func (s *SQLiteStore) CreateModem(ctx context.Context, modem model.Modem) (model
 func (s *SQLiteStore) UpdateModem(ctx context.Context, modem model.Modem) (model.Modem, error) {
 	modem.UpdatedAt = time.Now().UTC()
 	modem.SMSReadStorage = model.NormalizeSMSStorage(modem.SMSReadStorage)
+	modem.SMSDeleteThresholdPct = model.NormalizeSMSDeleteThresholdPct(modem.SMSDeleteThresholdPct)
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE modems
 		SET logical_name = ?,
 		    assigned_network_mcc_mnc = ?,
 		    sms_read_storage = ?,
+		    sms_delete_threshold_pct = ?,
 		    enabled = ?,
 		    poll_interval_sec = ?,
 		    at_timeout_ms = ?,
@@ -240,6 +248,7 @@ func (s *SQLiteStore) UpdateModem(ctx context.Context, modem model.Modem) (model
 		modem.LogicalName,
 		modem.AssignedNetworkMccMnc,
 		modem.SMSReadStorage,
+		modem.SMSDeleteThresholdPct,
 		boolToInt(modem.Enabled),
 		modem.PollIntervalSec,
 		modem.ATTimeoutMs,
@@ -551,6 +560,7 @@ func scanModem(scan func(dest ...any) error) (model.Modem, error) {
 	var enabled int
 	var lastSeen sql.NullString
 	var smsReadStorage string
+	var smsDeleteThresholdPct int
 	var status string
 	var createdAt string
 	var updatedAt string
@@ -561,6 +571,7 @@ func scanModem(scan func(dest ...any) error) (model.Modem, error) {
 		&modem.IMEI,
 		&modem.AssignedNetworkMccMnc,
 		&smsReadStorage,
+		&smsDeleteThresholdPct,
 		&enabled,
 		&modem.PollIntervalSec,
 		&modem.ATTimeoutMs,
@@ -580,6 +591,7 @@ func scanModem(scan func(dest ...any) error) (model.Modem, error) {
 
 	modem.Enabled = enabled == 1
 	modem.SMSReadStorage = model.NormalizeSMSStorage(model.SMSStorage(smsReadStorage))
+	modem.SMSDeleteThresholdPct = model.NormalizeSMSDeleteThresholdPct(smsDeleteThresholdPct)
 	modem.Status = model.ModemStatus(status)
 	if lastSeen.Valid {
 		parsed, err := time.Parse(time.RFC3339Nano, lastSeen.String)
