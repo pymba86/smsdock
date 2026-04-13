@@ -1,13 +1,14 @@
 services:
   api:
+    image: ${SMSDOCK_IMAGE:-ghcr.io/pymba86/smsdock:latest}
     build:
-      context: ../..
-      dockerfile: packages/api/Dockerfile
+      context: .
     container_name: smsdock-api
     restart: unless-stopped
     environment:
       SMSDOCK_HTTP_ADDR: :8080
       SMSDOCK_DB_PATH: /var/lib/smsdock/smsdock.db
+      SMSDOCK_WEB_DIST: /app/web
       SMSDOCK_DEVICE_GLOBS: /dev/serial/by-id/*,/dev/ttyUSB*
     volumes:
       - smsdock-data:/var/lib/smsdock
@@ -21,21 +22,8 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-
-  web:
-    build:
-      context: ../..
-      dockerfile: packages/web/Dockerfile
-      args:
-        VITE_API_BASE: ""
-    container_name: smsdock-web
-    restart: unless-stopped
-    depends_on:
-      api:
-        condition: service_healthy
     ports:
-      - "8081:80"
+      - "8080:8080"
 
 volumes:
   smsdock-data:
-

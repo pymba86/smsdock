@@ -4,9 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "go run ./cmd/api",
-    "build": "mkdir -p ./bin && go build -o ./bin/smsdock-api ./cmd/api",
+    "build": "mkdir -p ./bin && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o ./bin/smsdock-api ./cmd/api",
     "lint": "test -z \"$(gofmt -l .)\"",
     "test": "go test ./..."
   }
 }
-

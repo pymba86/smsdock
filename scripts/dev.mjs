@@ -17,9 +17,6 @@ const tasks = [
     command: "pnpm",
     args: ["dev"],
     cwd: new URL("../packages/web/", import.meta.url),
-    env: {
-      VITE_API_BASE: "http://localhost:8080",
-    },
   },
 ];
 
@@ -68,4 +65,3 @@ for (const task of tasks) {
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => shutdown(0));
 }
-

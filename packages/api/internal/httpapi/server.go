@@ -16,12 +16,13 @@ import (
 )
 
 type Server struct {
-	store   *storage.SQLiteStore
-	manager *modem.Manager
+	store    *storage.SQLiteStore
+	manager  *modem.Manager
+	frontend http.Handler
 }
 
-func New(store *storage.SQLiteStore, manager *modem.Manager) *Server {
-	return &Server{store: store, manager: manager}
+func New(store *storage.SQLiteStore, manager *modem.Manager, frontend http.Handler) *Server {
+	return &Server{store: store, manager: manager, frontend: frontend}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -40,6 +41,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/modems/{id}/networks/select", s.handleSelectNetwork)
 	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.HandleFunc("GET /ready", s.handleReady)
+	if s.frontend != nil {
+		mux.Handle("/", s.frontend)
+	}
 
 	return cors(mux)
 }
@@ -382,6 +386,11 @@ func writeError(writer http.ResponseWriter, status int, err error) {
 
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if !isCORSRoute(request.URL.Path) {
+			next.ServeHTTP(writer, request)
+			return
+		}
+
 		writer.Header().Set("Access-Control-Allow-Origin", "*")
 		writer.Header().Set("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS")
 		writer.Header().Set("Access-Control-Allow-Headers", "Content-Type")
@@ -391,6 +400,10 @@ func cors(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(writer, request)
 	})
+}
+
+func isCORSRoute(path string) bool {
+	return strings.HasPrefix(path, "/api/") || path == "/health" || path == "/ready"
 }
 
 func readPagination(request *http.Request, defaultPage, defaultPageSize int) (int, int) {

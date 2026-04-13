@@ -40,9 +40,16 @@ func main() {
 	}
 	defer manager.StopAll()
 
+	frontend, err := httpapi.NewFrontendHandler(config.webDist)
+	if err != nil {
+		log.Printf("frontend disabled: %v", err)
+	} else if frontend != nil {
+		log.Printf("frontend enabled from %s", config.webDist)
+	}
+
 	server := &http.Server{
 		Addr:              config.httpAddr,
-		Handler:           httpapi.New(store, manager).Handler(),
+		Handler:           httpapi.New(store, manager, frontend).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -63,6 +70,7 @@ func main() {
 type appConfig struct {
 	httpAddr    string
 	dbPath      string
+	webDist     string
 	deviceGlobs []string
 }
 
@@ -70,6 +78,7 @@ func loadConfig() appConfig {
 	return appConfig{
 		httpAddr: envOrDefault("SMSDOCK_HTTP_ADDR", ":8080"),
 		dbPath:   envOrDefault("SMSDOCK_DB_PATH", "./data/smsdock.db"),
+		webDist:  envOrDefault("SMSDOCK_WEB_DIST", "../web/dist"),
 		deviceGlobs: splitCSV(
 			envOrDefault("SMSDOCK_DEVICE_GLOBS", "/dev/serial/by-id/*,/dev/ttyUSB*"),
 		),
