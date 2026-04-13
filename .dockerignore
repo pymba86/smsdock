@@ -1,0 +1,11 @@
+node_modules
+.pnpm-store
+.vite
+dist
+coverage
+packages/api/bin
+packages/api/data
+*.db
+*.db-shm
+*.db-wal
+

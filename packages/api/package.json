@@ -1,0 +1,12 @@
+{
+  "name": "@smsdock/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "go run ./cmd/api",
+    "build": "mkdir -p ./bin && go build -o ./bin/smsdock-api ./cmd/api",
+    "lint": "test -z \"$(gofmt -l .)\"",
+    "test": "go test ./..."
+  }
+}
+

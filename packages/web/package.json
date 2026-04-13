@@ -1,0 +1,26 @@
+{
+  "name": "@smsdock/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "test": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@smsdock/shared": "workspace:*",
+    "lucide-react": "^0.543.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.2",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.7"
+  }
+}
+

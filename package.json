@@ -1,0 +1,12 @@
+{
+  "name": "smsdock",
+  "private": true,
+  "packageManager": "pnpm@10.32.1",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "pnpm --filter @smsdock/shared build && pnpm --filter @smsdock/web build && pnpm --filter @smsdock/api build",
+    "lint": "pnpm --filter @smsdock/shared lint && pnpm --filter @smsdock/web lint && pnpm --filter @smsdock/api lint",
+    "test": "pnpm --filter @smsdock/shared test && pnpm --filter @smsdock/web test && pnpm --filter @smsdock/api test"
+  }
+}
+
