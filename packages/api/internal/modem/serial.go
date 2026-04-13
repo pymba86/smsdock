@@ -337,7 +337,7 @@ func (a *SerialAdapter) setSMSStorage(ctx context.Context, storage model.SMSStor
 }
 
 func (a *SerialAdapter) ScanNetworks(ctx context.Context) ([]model.NetworkOption, error) {
-	lines, err := a.command(ctx, "AT+COPS=?")
+	lines, err := a.commandWithCallerDeadline(ctx, "AT+COPS=?")
 	if err != nil {
 		return nil, err
 	}
@@ -371,7 +371,7 @@ func (a *SerialAdapter) ScanNetworks(ctx context.Context) ([]model.NetworkOption
 }
 
 func (a *SerialAdapter) SelectNetwork(ctx context.Context, mccMnc string) error {
-	_, err := a.command(ctx, fmt.Sprintf(`AT+COPS=1,2,"%s"`, mccMnc))
+	_, err := a.commandWithCallerDeadline(ctx, fmt.Sprintf(`AT+COPS=1,2,"%s"`, mccMnc))
 	return err
 }
 
@@ -387,11 +387,26 @@ func (a *SerialAdapter) singleLine(ctx context.Context, command string) (string,
 }
 
 func (a *SerialAdapter) command(ctx context.Context, command string) ([]string, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+	if a.timeout <= 0 {
+		return a.commandLocked(ctx, command)
+	}
 
 	commandCtx, cancel := context.WithTimeout(ctx, a.timeout)
 	defer cancel()
+
+	return a.commandLocked(commandCtx, command)
+}
+
+func (a *SerialAdapter) commandWithCallerDeadline(ctx context.Context, command string) ([]string, error) {
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline && a.timeout > 0 {
+		return a.command(ctx, command)
+	}
+	return a.commandLocked(ctx, command)
+}
+
+func (a *SerialAdapter) commandLocked(ctx context.Context, command string) ([]string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 
 	if _, err := a.port.Write([]byte(command + "\r")); err != nil {
 		return nil, fmt.Errorf("write command %s: %w", command, err)
@@ -422,7 +437,7 @@ func (a *SerialAdapter) command(ctx context.Context, command string) ([]string, 
 
 	for {
 		select {
-		case <-commandCtx.Done():
+		case <-ctx.Done():
 			return nil, fmt.Errorf("command timeout for %s", command)
 		default:
 		}

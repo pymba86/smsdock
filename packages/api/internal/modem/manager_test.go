@@ -2,6 +2,7 @@ package modem_test
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -223,6 +224,62 @@ func TestManagerCleansUpSMSOnlyAboveThreshold(t *testing.T) {
 	}
 	if remaining[0].Body != "second" || remaining[1].Body != "third" {
 		t.Fatalf("remaining modem sms = %#v", remaining)
+	}
+}
+
+func TestManagerSelectNetworkUsesScanTimeout(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store, err := storage.Open(ctx, filepath.Join(t.TempDir(), "smsdock.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	registry := fakemodem.NewRegistry()
+	fake := &fakemodem.FakeModem{
+		Path:               "/dev/fake-modem-03",
+		IMEI:               "323456789012345",
+		Manufacturer:       "fake",
+		Model:              "M3",
+		Firmware:           "1.0.0",
+		SIMState:           "READY",
+		ICCID:              "8901000000000000003",
+		SignalStrength:     20,
+		CurrentNetworkCode: "25001",
+		CurrentNetworkName: "operator-a",
+		Networks: []model.NetworkOption{
+			{Code: "25001", Name: "operator-a", Status: "current"},
+			{Code: "25002", Name: "operator-b", Status: "available"},
+		},
+		SelectDelay: 1500 * time.Millisecond,
+		Available:   true,
+	}
+	registry.Add(fake)
+
+	modemRecord, err := store.CreateModem(ctx, model.Modem{
+		LogicalName:           "fake-03",
+		IMEI:                  fake.IMEI,
+		AssignedNetworkMccMnc: "25001",
+		Enabled:               true,
+		PollIntervalSec:       60,
+		ATTimeoutMs:           500,
+		ScanTimeoutSec:        1,
+	})
+	if err != nil {
+		t.Fatalf("CreateModem() error = %v", err)
+	}
+
+	manager := modem.NewManager(store, registry)
+	if err := manager.Load(ctx); err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	defer manager.StopAll()
+
+	err = manager.SelectNetwork(ctx, modemRecord.ID, "25002")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("SelectNetwork() error = %v, want %v", err, context.DeadlineExceeded)
 	}
 }
 

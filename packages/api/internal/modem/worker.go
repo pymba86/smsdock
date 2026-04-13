@@ -93,15 +93,15 @@ func (w *Worker) ScanNetworks(ctx context.Context) ([]model.NetworkOption, error
 		return nil, err
 	}
 
-	scanCtx, cancel := context.WithTimeout(ctx, time.Duration(modemRecord.ScanTimeoutSec)*time.Second)
+	scanCtx, cancel := w.networkOperationContext(ctx, modemRecord)
 	defer cancel()
 
 	networks, err := w.adapter.ScanNetworks(scanCtx)
 	if err != nil {
-		w.fail(scanCtx, "network_scan_failed", err)
+		w.fail(ctx, "network_scan_failed", err)
 		return nil, err
 	}
-	_ = w.appendEvent(scanCtx, model.EventLevelInfo, "network_scan_finished", fmt.Sprintf("Found %d networks", len(networks)), "")
+	_ = w.appendEvent(ctx, model.EventLevelInfo, "network_scan_finished", fmt.Sprintf("Found %d networks", len(networks)), "")
 	return networks, nil
 }
 
@@ -121,7 +121,10 @@ func (w *Worker) SelectNetwork(ctx context.Context, mccMnc string) error {
 		state.Status = model.ModemStatusReady
 	})
 
-	if err := w.adapter.SelectNetwork(ctx, mccMnc); err != nil {
+	selectCtx, cancel := w.networkOperationContext(ctx, modemRecord)
+	defer cancel()
+
+	if err := w.adapter.SelectNetwork(selectCtx, mccMnc); err != nil {
 		w.fail(ctx, "network_select_failed", err)
 		return err
 	}
@@ -134,6 +137,14 @@ func (w *Worker) SelectNetwork(ctx context.Context, mccMnc string) error {
 	w.UpdateConfig(modemRecord)
 	_ = w.appendEvent(ctx, model.EventLevelInfo, "network_selected", "Network changed manually", fmt.Sprintf(`{"mccMnc":"%s"}`, mccMnc))
 	return nil
+}
+
+func (w *Worker) networkOperationContext(ctx context.Context, modemRecord model.Modem) (context.Context, context.CancelFunc) {
+	timeout := time.Duration(modemRecord.ScanTimeoutSec) * time.Second
+	if timeout <= 0 {
+		timeout = 90 * time.Second
+	}
+	return context.WithTimeout(ctx, timeout)
 }
 
 func (w *Worker) loop() {

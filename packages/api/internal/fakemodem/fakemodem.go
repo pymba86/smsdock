@@ -32,6 +32,8 @@ type FakeModem struct {
 	Messages           []modem.ReceivedSMS
 	StorageCapacity    int
 	Available          bool
+	ScanDelay          time.Duration
+	SelectDelay        time.Duration
 
 	StatusError error
 	PollError   error
@@ -204,7 +206,11 @@ func (a *Adapter) DeleteSMS(_ context.Context, storage model.SMSStorage, index i
 	return nil
 }
 
-func (a *Adapter) ScanNetworks(_ context.Context) ([]model.NetworkOption, error) {
+func (a *Adapter) ScanNetworks(ctx context.Context) ([]model.NetworkOption, error) {
+	if err := a.wait(ctx, true); err != nil {
+		return nil, err
+	}
+
 	a.fake.mu.Lock()
 	defer a.fake.mu.Unlock()
 	if a.fake.ScanError != nil {
@@ -215,7 +221,11 @@ func (a *Adapter) ScanNetworks(_ context.Context) ([]model.NetworkOption, error)
 	return networks, nil
 }
 
-func (a *Adapter) SelectNetwork(_ context.Context, mccMnc string) error {
+func (a *Adapter) SelectNetwork(ctx context.Context, mccMnc string) error {
+	if err := a.wait(ctx, false); err != nil {
+		return err
+	}
+
 	a.fake.mu.Lock()
 	defer a.fake.mu.Unlock()
 	if a.fake.SelectError != nil {
@@ -228,4 +238,27 @@ func (a *Adapter) SelectNetwork(_ context.Context, mccMnc string) error {
 
 func (a *Adapter) Close() error {
 	return nil
+}
+
+func (a *Adapter) wait(ctx context.Context, scan bool) error {
+	a.fake.mu.Lock()
+	delay := a.fake.SelectDelay
+	if scan {
+		delay = a.fake.ScanDelay
+	}
+	a.fake.mu.Unlock()
+
+	if delay <= 0 {
+		return nil
+	}
+
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }

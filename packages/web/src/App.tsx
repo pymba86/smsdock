@@ -1003,7 +1003,7 @@ function MessagePanel({
             <article key={message.id} className="sms-card">
               <header>
                 <strong>{message.sender}</strong>
-                <span>{formatDateTime(message.receivedAt)}</span>
+                <span>{formatDateTime(message.modemTimestamp || message.receivedAt)}</span>
               </header>
               <p>{message.body}</p>
               <footer>

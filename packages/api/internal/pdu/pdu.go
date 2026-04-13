@@ -49,7 +49,7 @@ func Decode(raw string) (Message, error) {
 	index++
 	addressType := bytes[index]
 	index++
-	addressSize := (addressLen + 1) / 2
+	addressSize := addressByteLength(addressType, addressLen)
 	if len(bytes) < index+addressSize+9 {
 		return Message{}, fmt.Errorf("pdu missing sender metadata")
 	}
@@ -141,7 +141,17 @@ func detectEncoding(dcs byte) string {
 	}
 }
 
+func addressByteLength(addressType byte, addressLength int) int {
+	if isAlphaNumericAddressType(addressType) {
+		return (addressLength*7 + 7) / 8
+	}
+	return (addressLength + 1) / 2
+}
+
 func decodeAddress(addressType byte, addressLength int, address []byte) string {
+	if isAlphaNumericAddressType(addressType) {
+		return decodeGSM7(address, 0, addressLength)
+	}
 	digits := decodeSemiOctet(address)
 	if len(digits) > addressLength {
 		digits = digits[:addressLength]
@@ -150,6 +160,10 @@ func decodeAddress(addressType byte, addressLength int, address []byte) string {
 		return "+" + digits
 	}
 	return digits
+}
+
+func isAlphaNumericAddressType(addressType byte) bool {
+	return addressType&0x70 == 0x50
 }
 
 func decodeSemiOctet(input []byte) string {

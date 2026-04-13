@@ -37,6 +37,22 @@ func TestDecodeUCS2(t *testing.T) {
 	}
 }
 
+func TestDecodeAlphaNumericSender(t *testing.T) {
+	t.Parallel()
+
+	message, err := Decode("000406D0C7F7FBCC2E0300004240312143650005E8329BFD06")
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+
+	if message.Sender != "Google" {
+		t.Fatalf("sender = %q", message.Sender)
+	}
+	if message.Body != "hello" {
+		t.Fatalf("body = %q", message.Body)
+	}
+}
+
 func TestDecodeMultipartUCS2(t *testing.T) {
 	t.Parallel()
 
