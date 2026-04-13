@@ -55,6 +55,45 @@ func TestSerialAdapterCommandWithCallerDeadlineAllowsLongCommands(t *testing.T) 
 	}
 }
 
+func TestSerialAdapterScanNetworksParsesCOPSResponse(t *testing.T) {
+	t.Parallel()
+
+	command := "AT+COPS=?"
+	port := newScriptedPort(command, `+COPS: (1,"TELE2 RU","TELE2 RU","25020",2),(1,"","","25011",7),(2,"MegaFon RUS","MegaFon","25002",2),(1,"TELE2 RU","TELE2 RU","25020",0),(3,"Beeline","Beeline","25099",0))`, 0)
+	adapter := &SerialAdapter{
+		port:    port,
+		timeout: 100 * time.Millisecond,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	networks, err := adapter.ScanNetworks(ctx)
+	if err != nil {
+		t.Fatalf("ScanNetworks() error = %v", err)
+	}
+	if len(networks) != 4 {
+		t.Fatalf("networks length = %d", len(networks))
+	}
+
+	expected := []struct {
+		code   string
+		name   string
+		status string
+	}{
+		{code: "25020", name: "TELE2 RU", status: "available"},
+		{code: "25011", name: "", status: "available"},
+		{code: "25002", name: "MegaFon RUS", status: "current"},
+		{code: "25099", name: "Beeline", status: "forbidden"},
+	}
+
+	for index, want := range expected {
+		if networks[index].Code != want.code || networks[index].Name != want.name || networks[index].Status != want.status {
+			t.Fatalf("networks[%d] = %#v, want code=%q name=%q status=%q", index, networks[index], want.code, want.name, want.status)
+		}
+	}
+}
+
 type scriptedPort struct {
 	mu            sync.Mutex
 	response      []byte

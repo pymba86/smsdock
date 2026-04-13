@@ -21,7 +21,7 @@ import (
 
 var (
 	cmglHeaderPattern = regexp.MustCompile(`^\+CMGL:\s*(\d+)`)
-	copsScanPattern   = regexp.MustCompile(`\((\d+),"([^"]*)","([^"]*)","([^"]*)"(?:,"([^"]*)")?\)`)
+	copsScanPattern   = regexp.MustCompile(`\((\d+),"([^"]*)","([^"]*)","([^"]*)"(?:,(?:"[^"]*"|\d+))?\)`)
 	copsStatusPattern = regexp.MustCompile(`^\+COPS:\s*(\d+)(?:,(\d+),"([^"]*)")?`)
 	cpinPattern       = regexp.MustCompile(`^\+CPIN:\s*(.+)$`)
 	cpmsPattern       = regexp.MustCompile(`^\+CPMS:\s*"([^"]+)",(\d+),(\d+)`)
